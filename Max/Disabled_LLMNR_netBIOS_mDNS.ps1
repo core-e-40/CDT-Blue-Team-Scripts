@@ -35,6 +35,16 @@ foreach ($adapter in $adapters) {
 Write-Host "NetBIOS Disabled on all active adapters." -ForegroundColor Green
 
 
-Write-Host "`nAll settings applied. Restarting DNS Cache...." -ForegroundColor Yellow
+Write-Host "`nAll settings applied, verifying configuration." -ForegroundColor Yellow
 
-Restart-Service Dnscache
+Write-Host "Setting should display EnableMulticast : 0" -ForegroundColor Green
+Get-ItemProperty "HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient"
+
+Write-Host "Setting should display EnableMDNS : 0" -ForegroundColor Green
+Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters"
+
+Write-Host "Setting should display 2 for each network adapter" -ForegroundColor Green
+Get-WmiObject Win32_NetworkAdapterConfiguration | 
+Where-Object {$_.IPEnabled} | 
+Select Description, TcpipNetbiosOptions
+
