@@ -28,9 +28,9 @@ CREDS_FILE="$SCRIPTS_DIR/apache_creds.txt"
 LOG_FILE="$SCRIPTS_DIR/apache_log.log"
 
 # FTP Configuration (for encrypted backup)
-FTP_SERVER=""                                     # Fill in your FTP server
-FTP_USER=""                                       # Fill in your FTP username
-FTP_PASS=""                                       # Fill in your FTP password
+FTP_SERVER=""                                     # FTP server
+FTP_USER=""                                       # FTP username
+FTP_PASS=""                                       # FTP password
 
 # Backup
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
