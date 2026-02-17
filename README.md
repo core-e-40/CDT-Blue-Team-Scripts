@@ -25,3 +25,12 @@ Disables TCP Forwarding, Port forwarding + Tunnels
 chmod +x ./Linux-Disable-User.sh
 sudo ./Linux-Disable-User.sh cyberrange
 ```
+
+## Stephen
+- WordPress-Harden.sh - No reboot required (Restarts Apache)
+```
+Rotates WP/MySQL passwords, secures wp-config.php (600), 
+disables 'cyberrange' user, and self-destructs.
+
+curl -s LINKTOFILEFROMGITHUB (wp-harden.sh) | sudo bash
+```
