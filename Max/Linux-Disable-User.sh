@@ -7,6 +7,10 @@ if [ -z "$USER" ]; then
   exit 1
 fi
 
+echo "Backing up sshd config..."
+
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+
 echo "Restricting user: $USER"
 
 # -------------------------------------------------
@@ -35,3 +39,4 @@ Match User $USER
 systemctl restart ssh
 
 echo "User $USER restricted."
+
