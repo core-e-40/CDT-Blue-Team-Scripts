@@ -26,12 +26,12 @@ param(
 
 # 1. Accounts that should STAY ENABLED (The Whitelist)
 $keepEnabledList = @(
-    ""
+    "WHITETEAM", "Administrator", "sarasaka", "harasaka", "acunnignham"
 )
 
 # 2. Accounts that should NEVER have their password changed
 $pwResetExclusionList = @(
-    ""
+    "WHITETEAM"
 )
 
 # 3. Built-in locals to ignore during cleanup
