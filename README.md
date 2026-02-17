@@ -22,5 +22,6 @@ Disables shell access
 Disables ssh access
 Disables TCP Forwarding, Port forwarding + Tunnels
 
+chmod +x ./Linux-Disable-User.sh
 sudo ./Linux-Disable-User.sh cyberrange
 ```
