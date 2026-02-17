@@ -1,13 +1,13 @@
-#!/bin/bash
+﻿#!/bin/bash
 
 USER="$1"
 
 if [ -z "$USER" ]; then
-  echo "Usage: sudo ./disable_user.sh username"
+  echo "Usage: sudo ./Linux-Disable-User.sh username"
   exit 1
 fi
 
-echo "Backing up sshd config..."
+echo "Backing up sshd config"
 
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 
@@ -39,4 +39,3 @@ Match User $USER
 systemctl restart ssh
 
 echo "User $USER restricted."
-
