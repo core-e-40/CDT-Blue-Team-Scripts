@@ -1,5 +1,6 @@
 To run the password manager/changer (ADCHANGE.ps1), run the following:
 
+curl -O https://raw.githubusercontent.com/core-e-40/CDT-Blue-Team-Scripts/refs/heads/main/Alexander/ADCHANGE.ps1
 PowerShell -ExecutionPolicy Bypass -File ADCHANGE.ps1
 .\Bulk-Reset-ADPasswords.ps1 -PasswordCsvPath "C:\pwlist_batch1.csv" -OutputMappingPath "C:\mapping_batch1.csv" 
 
