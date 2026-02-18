@@ -277,14 +277,6 @@ echo "WARNING: If scoring requires persistent data, re-enable RDB/AOF" | tee -a 
 
 echo "$(date): Running pre-restart checks..." | tee -a $LOG_FILE
 
-# Check if port 6379 is already in use by a different process
-PORT_CHECK=$(sudo ss -tlnp | grep ":6379" | grep -v "redis-server")
-if [ -n "$PORT_CHECK" ]; then
-    echo "WARNING: Port 6379 is in use by another process:" | tee -a $LOG_FILE
-    echo "$PORT_CHECK" | tee -a $LOG_FILE
-    echo "Attempting to stop Redis service first..." | tee -a $LOG_FILE
-fi
-
 # Stop Redis service before restarting (clean slate)
 echo "$(date): Stopping existing Redis service..." | tee -a $LOG_FILE
 systemctl stop $REDIS_SERVICE_NAME 2>/dev/null
@@ -299,9 +291,9 @@ if [ -n "$REDIS_PIDS" ]; then
 fi
 
 # Verify port is now free
-if sudo ss -tlnp | grep -q ":6379"; then
+if ss -tlnp 2>/dev/null | grep -q ":6379"; then
     echo "ERROR: Port 6379 is still in use after cleanup!" | tee -a $LOG_FILE
-    sudo ss -tlnp | grep ":6379" | tee -a $LOG_FILE
+    ss -tlnp 2>/dev/null | grep ":6379" | tee -a $LOG_FILE
     echo "Cannot proceed with Redis restart" | tee -a $LOG_FILE
     exit 1
 fi
@@ -314,27 +306,32 @@ echo "SUCCESS: Port 6379 is free" | tee -a $LOG_FILE
 
 echo "$(date): Testing Redis config syntax..." | tee -a $LOG_FILE
 
-# Test config syntax
-CONFIG_TEST_OUTPUT=$(redis-server $REDIS_CONFIG_DIR --test-config 2>&1)
-CONFIG_TEST_RESULT=$?
+# Test config syntax - FIXED: Use a temporary test instead of --test-config flag
+redis-server $REDIS_CONFIG_DIR > /tmp/redis_test.log 2>&1 &
+REDIS_TEST_PID=$!
+sleep 2
 
-if [ $CONFIG_TEST_RESULT -ne 0 ]; then
-    echo "ERROR: Redis config syntax error!" | tee -a $LOG_FILE
-    echo "$CONFIG_TEST_OUTPUT" | tee -a $LOG_FILE
+# Check if Redis started successfully
+if ps -p $REDIS_TEST_PID > /dev/null; then
+    kill $REDIS_TEST_PID 2>/dev/null
+    wait $REDIS_TEST_PID 2>/dev/null
+    echo "SUCCESS: Config syntax is valid" | tee -a $LOG_FILE
+else
+    echo "ERROR: Redis config has errors!" | tee -a $LOG_FILE
+    cat /tmp/redis_test.log | tee -a $LOG_FILE
     echo "Restoring backup..." | tee -a $LOG_FILE
     cp $BACKUP_NAME $REDIS_CONFIG_DIR
     echo "ERROR: Hardening failed, original config restored" | tee -a $LOG_FILE
-    echo "To debug: redis-server $REDIS_CONFIG_DIR --test-config" | tee -a $LOG_FILE
     exit 1
 fi
 
-echo "SUCCESS: Config syntax is valid" | tee -a $LOG_FILE
+rm -f /tmp/redis_test.log
 
 # ============================================
 # SECTION 10: RESTART REDIS
 # ============================================
 
-echo "$(date): Restarting Redis service..." | tee -a $LOG_FILE
+echo "$(date): Starting Redis service..." | tee -a $LOG_FILE
 
 # Start Redis service
 systemctl start $REDIS_SERVICE_NAME
@@ -385,11 +382,11 @@ else
 fi
 
 # Check Redis is listening on correct port
-if sudo ss -tlnp | grep -q "127.0.0.1:6379.*redis-server"; then
+if ss -tlnp 2>/dev/null | grep -q "127.0.0.1:6379.*redis-server"; then
     echo "SUCCESS: Redis is listening on 127.0.0.1:6379" | tee -a $LOG_FILE
 else
     echo "WARNING: Redis may not be bound to localhost correctly" | tee -a $LOG_FILE
-    sudo ss -tlnp | grep redis-server | tee -a $LOG_FILE
+    ss -tlnp 2>/dev/null | grep redis-server | tee -a $LOG_FILE
 fi
 
 # ============================================
