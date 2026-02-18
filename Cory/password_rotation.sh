@@ -2,6 +2,7 @@
 #==============================
 # Automated Password Rotation with Sheet Cycling
 # By: Cory Le
+# FIXED: Case-insensitive user matching
 #==============================
 
 LOG_FILE="/opt/blue_scripts/password_rotation.log"
@@ -68,10 +69,10 @@ if [ ! -s "$CSV_FILE" ]; then
 fi
 
 # ============================================
-# SECTION 3: LOAD PASSWORD MAP FROM CSV
+# SECTION 3: LOAD PASSWORD MAP FROM CSV (CASE-INSENSITIVE)
 # ============================================
 
-echo "$(date): Loading password mappings..." | tee -a $LOG_FILE
+echo "$(date): Loading password mappings (case-insensitive)..." | tee -a $LOG_FILE
 
 declare -A PASSWORD_MAP
 OTHER_PASSWORD=""
@@ -84,12 +85,16 @@ while IFS=',' read -r username password; do
     # Skip empty lines
     [ -z "$username" ] && continue
     
-    if [ "$username" = "other" ]; then
+    # Convert to lowercase for case-insensitive matching
+    username_lower=$(echo "$username" | tr '[:upper:]' '[:lower:]')
+    
+    if [ "$username_lower" = "other" ]; then
         OTHER_PASSWORD="$password"
         echo "Loaded fallback password for unlisted users" | tee -a $LOG_FILE
     else
-        PASSWORD_MAP["$username"]="$password"
-        echo "Loaded password for user: $username" | tee -a $LOG_FILE
+        # Store with LOWERCASE key for case-insensitive matching
+        PASSWORD_MAP["$username_lower"]="$password"
+        echo "Loaded password for user: $username → normalized as: $username_lower" | tee -a $LOG_FILE
     fi
 done < "$CSV_FILE"
 
@@ -114,7 +119,7 @@ echo "Users to rotate:" | tee -a $LOG_FILE
 echo "$ALL_USERS" | tee -a $LOG_FILE
 
 # ============================================
-# SECTION 5: ROTATE PASSWORDS
+# SECTION 5: ROTATE PASSWORDS (CASE-INSENSITIVE MATCHING)
 # ============================================
 
 echo "$(date): Rotating passwords for all users..." | tee -a $LOG_FILE
@@ -124,11 +129,14 @@ FAIL_COUNT=0
 FALLBACK_COUNT=0
 
 for user in $ALL_USERS; do
-    # Check if user has specific password in CSV
-    if [ -n "${PASSWORD_MAP[$user]}" ]; then
+    # Convert system username to lowercase for matching
+    user_lower=$(echo "$user" | tr '[:upper:]' '[:lower:]')
+    
+    # Check if user has specific password in CSV (case-insensitive)
+    if [ -n "${PASSWORD_MAP[$user_lower]}" ]; then
         # User has specific password
-        NEW_PASSWORD="${PASSWORD_MAP[$user]}"
-        echo "$(date): Changing password for $user (specific)" | tee -a $LOG_FILE
+        NEW_PASSWORD="${PASSWORD_MAP[$user_lower]}"
+        echo "$(date): Changing password for $user (matched as: $user_lower, specific)" | tee -a $LOG_FILE
     elif [ -n "$OTHER_PASSWORD" ]; then
         # User not in CSV, use "other" password
         NEW_PASSWORD="$OTHER_PASSWORD"
@@ -140,7 +148,7 @@ for user in $ALL_USERS; do
         continue
     fi
     
-    # Change the password
+    # Change the password (use actual system username, not lowercase)
     echo "$user:$NEW_PASSWORD" | chpasswd
     
     if [ $? -eq 0 ]; then
