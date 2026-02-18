@@ -1,3 +1,4 @@
+#!/bin/bash
 #==============================
 # Hardening Redis script
 # By: Cory Le
@@ -15,16 +16,20 @@ REDIS_SERVICE_NAME="redis-server" # service name
 CREDS_FILE="/opt/blue_scripts/redis_creds.txt" 
 SCRIPTS_DIR="/opt/blue_scripts"
 
-FTP_SERVER="" # FTP server IP/host
-FTP_USER="" # FTP username
-FTP_PASS="" # FTP password
-PUBLIC_KEY="" # Public key used for encrypting creds
+# Hidden backup directory (hard for Red Team to find)
+HIDDEN_BACKUP_DIR="/var/cache/.systemd-private"  # Looks like systemd cache
+# Alternative hidden locations:
+# /usr/lib/.hidden-backups
+# /var/spool/.cache-data
+# /lib/modules/.backup
 
-TIMESTAMP=$(date +Y%m%d_%H%M%S)
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="$REDIS_CONFIG_DIR.backup.$TIMESTAMP"
+HIDDEN_CREDS_BACKUP="$HIDDEN_BACKUP_DIR/redis_creds_$TIMESTAMP.txt"
 
 LOG_FILE="/opt/blue_scripts/redis_log.log"
 
+echo "$(date): Starting Redis hardening..." | tee -a $LOG_FILE
 
 # ============================================
 # SECTION 2: backup original config
@@ -38,10 +43,13 @@ if [ ! -f "$REDIS_CONFIG_DIR" ]; then
     exit 1
 fi
 
-# Create backup directory if it doesn't exist
+# Create backup directories if they don't exist
 mkdir -p $SCRIPTS_DIR
+mkdir -p $HIDDEN_BACKUP_DIR
+chmod 700 $HIDDEN_BACKUP_DIR  # Only root can access
+chown root:root $HIDDEN_BACKUP_DIR
 
-# Backup the original config
+# Backup the original config (standard location)
 cp $REDIS_CONFIG_DIR $BACKUP_NAME
 
 # Verify backup was created
@@ -58,20 +66,19 @@ fi
 
 echo "$(date): Applying network hardening..." | tee -a $LOG_FILE
 
-# Bind to all interfaces (0.0.0.0) for scoring compatibility
-# Change to 127.0.0.1 if you want localhost-only
-sed -i "s/^bind .*/bind 0.0.0.0/" $REDIS_CONFIG_DIR
+# Bind to localhost only (Apache is on same VM, so this is safe)
+sed -i "s/^bind .*/bind 127.0.0.1/" $REDIS_CONFIG_DIR
 grep -q "^bind" $REDIS_CONFIG_DIR || echo "bind 127.0.0.1" >> $REDIS_CONFIG_DIR
 
 # Keep default port 6379 (don't change for scoring safety)
-# sed -i "s/^port .*/port 6379/" $REDIS_CONFIG_DIR
-# grep -q "^port" $REDIS_CONFIG_DIR || echo "port 6379" >> $REDIS_CONFIG_DIR
+sed -i "s/^port .*/port 6379/" $REDIS_CONFIG_DIR
+grep -q "^port" $REDIS_CONFIG_DIR || echo "port 6379" >> $REDIS_CONFIG_DIR
 
 # Enable protected mode
 sed -i "s/^protected-mode .*/protected-mode yes/" $REDIS_CONFIG_DIR
 grep -q "^protected-mode" $REDIS_CONFIG_DIR || echo "protected-mode yes" >> $REDIS_CONFIG_DIR
 
-echo "SUCCESS: Network hardening applied" | tee -a $LOG_FILE
+echo "SUCCESS: Network hardening applied (Redis bound to localhost)" | tee -a $LOG_FILE
 
 # ============================================
 # SECTION 4: SET CREDENTIALS
@@ -88,7 +95,13 @@ echo "$NEW_PASWD" > $CREDS_FILE
 chmod 600 $CREDS_FILE
 chown root:root $CREDS_FILE
 
+# HIDDEN BACKUP: Save password to hidden directory
+echo "$NEW_PASWD" > $HIDDEN_CREDS_BACKUP
+chmod 600 $HIDDEN_CREDS_BACKUP
+chown root:root $HIDDEN_CREDS_BACKUP
+
 echo "SUCCESS: Password set and saved to $CREDS_FILE" | tee -a $LOG_FILE
+echo "SUCCESS: Password backup saved to hidden location" | tee -a $LOG_FILE
 
 # ============================================
 # SECTION 5: DISABLE ADMIN COMMANDS
@@ -209,20 +222,23 @@ else
     echo "WARNING: Redis auth test failed (check bind address)" | tee -a $LOG_FILE
 fi
 
-
+# ============================================
 # FINAL OUTPUT
+# ============================================
 
 echo ""
 echo "=========================================="
 echo "Redis Hardening: COMPLETE"
 echo "=========================================="
 echo "Password saved to: $CREDS_FILE"
+echo "Hidden backup: $HIDDEN_BACKUP_DIR"
 echo "Config backup: $BACKUP_NAME"
 echo "Log file: $LOG_FILE"
 echo ""
 echo "Current Redis password:"
 cat $CREDS_FILE
 echo ""
+echo "To retrieve hidden backup: cat $HIDDEN_CREDS_BACKUP"
+echo ""
 echo "=========================================="
 echo "$(date): Redis hardening completed successfully" | tee -a $LOG_FILE
-

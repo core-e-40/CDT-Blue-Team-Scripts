@@ -1,3 +1,4 @@
+#!/bin/bash
 #==============================
 # Hardening Apache script
 # By: Cory Le
@@ -10,7 +11,7 @@
 # Apache Configuration
 APACHE_CONF="/etc/apache2/apache2.conf"           # Main config (Debian/Ubuntu)
 APACHE_SECURITY_CONF="/etc/apache2/conf-available/security.conf"  # Security settings
-APACHE_SERVICE=""                          # Service name (use "httpd" for RHEL/CentOS)
+APACHE_SERVICE="apache2"                          # Service name (use "httpd" for RHEL/CentOS)
 APACHE_SITES_AVAILABLE="/etc/apache2/sites-available"
 
 # Web Application Paths
@@ -27,15 +28,15 @@ SCRIPTS_DIR="/opt/blue_scripts"
 CREDS_FILE="$SCRIPTS_DIR/apache_creds.txt"
 LOG_FILE="$SCRIPTS_DIR/apache_log.log"
 
-# FTP Configuration (for encrypted backup)
-FTP_SERVER=""                                     # FTP server
-FTP_USER=""                                       # FTP username
-FTP_PASS=""                                       # FTP password
+# Hidden backup directory (hard for Red Team to find)
+HIDDEN_BACKUP_DIR="/usr/share/locale/.backup-cache"  # Looks like locale cache
+# Alternative: /var/lib/dpkg/.backup-state
 
 # Backup
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 APACHE_BACKUP="$APACHE_CONF.backup.$TIMESTAMP"
 SECURITY_BACKUP="$APACHE_SECURITY_CONF.backup.$TIMESTAMP"
+HIDDEN_CREDS_BACKUP="$HIDDEN_BACKUP_DIR/apache_creds_$TIMESTAMP.txt"
 
 echo "$(date): Starting Apache hardening..." | tee -a $LOG_FILE
 
@@ -45,8 +46,11 @@ echo "$(date): Starting Apache hardening..." | tee -a $LOG_FILE
 
 echo "$(date): Backing up Apache configs..." | tee -a $LOG_FILE
 
-# Create backup directory
+# Create backup directories
 mkdir -p $SCRIPTS_DIR
+mkdir -p $HIDDEN_BACKUP_DIR
+chmod 700 $HIDDEN_BACKUP_DIR  # Only root can access
+chown root:root $HIDDEN_BACKUP_DIR
 
 # Backup main Apache config
 if [ -f "$APACHE_CONF" ]; then
@@ -93,8 +97,20 @@ EOF
 chmod 600 $CREDS_FILE
 chown root:root $CREDS_FILE
 
+# HIDDEN BACKUP: Save credentials to hidden directory
+cat > $HIDDEN_CREDS_BACKUP <<EOF
+Apache HTTP Basic Auth:
+Username: $NEW_HTPASSWD_USER
+Password: $NEW_HTPASSWD_PASS
+
+Generated: $(date)
+EOF
+
+chmod 600 $HIDDEN_CREDS_BACKUP
+chown root:root $HIDDEN_CREDS_BACKUP
+
 echo "SUCCESS: Credentials saved to $CREDS_FILE" | tee -a $LOG_FILE
-# Note: Skipping encryption/FTP for now (can add later if needed)
+echo "SUCCESS: Credentials backup saved to hidden location" | tee -a $LOG_FILE
 
 # ============================================
 # SECTION 4: DISABLE DANGEROUS MODULES
@@ -324,11 +340,14 @@ echo "=========================================="
 echo "Apache Hardening: COMPLETE"
 echo "=========================================="
 echo "Credentials saved to: $CREDS_FILE"
-echo "Backup files: $SCRIPTS_DIR/*.backup.*"
+echo "Hidden backup: $HIDDEN_BACKUP_DIR"
+echo "Config backups: $APACHE_BACKUP, $SECURITY_BACKUP"
 echo "Log file: $LOG_FILE"
 echo ""
 echo "HTTP Basic Auth Credentials:"
 cat $CREDS_FILE
+echo ""
+echo "To retrieve hidden backup: cat $HIDDEN_CREDS_BACKUP"
 echo ""
 echo "=========================================="
 echo "$(date): Apache hardening completed successfully" | tee -a $LOG_FILE
