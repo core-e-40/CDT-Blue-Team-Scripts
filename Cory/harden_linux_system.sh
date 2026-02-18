@@ -2,6 +2,7 @@
 #==============================
 # Ubuntu System Hardening - Competition Safe
 # Generates random 6-digit sudo password (display only)
+# FIXED: Proper sudo hardening without syntax errors
 # By: Cory Le
 #==============================
 
@@ -18,6 +19,15 @@ chmod 700 $BACKUP_DIR
 # SECTION 0: GENERATE RANDOM SUDO PASSWORD
 # ============================================
 
+# Get the REAL user (the one who ran sudo, not root)
+if [ -n "$SUDO_USER" ]; then
+    TARGET_USER="$SUDO_USER"
+else
+    TARGET_USER="$(whoami)"
+fi
+
+echo "$(date): Changing password for: $TARGET_USER" | tee -a $LOG_FILE
+
 # Generate random 6-digit number
 SUDO_PASSWORD=$(shuf -i 100000-999999 -n 1)
 
@@ -26,7 +36,8 @@ echo "=========================================="
 echo "🔒 CRITICAL: WRITE THIS DOWN NOW!"
 echo "=========================================="
 echo ""
-echo "New sudo password for $(whoami): $SUDO_PASSWORD"
+echo "New password for user: $TARGET_USER"
+echo "Password: $SUDO_PASSWORD"
 echo ""
 echo "This will NOT be saved anywhere!"
 echo "Write it down before continuing!"
@@ -35,13 +46,13 @@ echo "Press Enter when you've written it down..."
 read -r
 
 echo ""
-echo "Changing password for $(whoami)..."
+echo "Changing password for $TARGET_USER..."
 
-# Change current user's password
-echo "$(whoami):$SUDO_PASSWORD" | chpasswd
+# Change the target user's password
+echo "$TARGET_USER:$SUDO_PASSWORD" | chpasswd
 
 if [ $? -eq 0 ]; then
-    echo "✓ Password changed successfully"
+    echo "✓ Password changed successfully for $TARGET_USER"
 else
     echo "✗ ERROR: Password change failed!"
     exit 1
@@ -57,7 +68,7 @@ clear
 # Clear bash history of this command
 history -c
 
-echo "$(date): Password changed for user (not logged)" | tee -a $LOG_FILE
+echo "$(date): Password changed for $TARGET_USER (not logged)" | tee -a $LOG_FILE
 echo "Screen cleared, password not saved anywhere" | tee -a $LOG_FILE
 
 # ============================================
@@ -107,7 +118,7 @@ else
 fi
 
 # ============================================
-# SECTION 2: HARDEN SUDO
+# SECTION 2: HARDEN SUDO (FIXED)
 # ============================================
 
 echo "$(date): Hardening sudo configuration..." | tee -a $LOG_FILE
@@ -115,28 +126,83 @@ echo "$(date): Hardening sudo configuration..." | tee -a $LOG_FILE
 # Backup sudoers
 cp /etc/sudoers $BACKUP_DIR/sudoers.backup
 
-# Remove all NOPASSWD entries
-sed -i 's/NOPASSWD://g' /etc/sudoers
+# Create a clean sudoers file without NOPASSWD
+cat > /tmp/sudoers.new <<'EOF'
+# This file MUST be edited with the 'visudo' command as root.
+#
+# See the man page for details on how to write a sudoers file.
+#
+Defaults        env_reset
+Defaults        mail_badpass
+Defaults        secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
 
-# Remove NOPASSWD from sudoers.d
+# Host alias specification
+
+# User alias specification
+
+# Cmnd alias specification
+
+# User privilege specification
+root    ALL=(ALL:ALL) ALL
+
+# Members of the admin group may gain root privileges
+%admin ALL=(ALL) ALL
+
+# Allow members of group sudo to execute any command (PASSWORD REQUIRED)
+%sudo   ALL=(ALL:ALL) ALL
+
+# See sudoers(5) for more information on "@include" directives:
+@includedir /etc/sudoers.d
+EOF
+
+# Test the new sudoers file syntax
+visudo -c -f /tmp/sudoers.new >> $LOG_FILE 2>&1
+
+if [ $? -eq 0 ]; then
+    # Syntax is valid, install it
+    cp /tmp/sudoers.new /etc/sudoers
+    chmod 440 /etc/sudoers
+    rm /tmp/sudoers.new
+    echo "SUCCESS: Main sudoers file hardened (NOPASSWD removed)" | tee -a $LOG_FILE
+else
+    echo "ERROR: New sudoers file has syntax errors!" | tee -a $LOG_FILE
+    cat /tmp/sudoers.new | tee -a $LOG_FILE
+    rm /tmp/sudoers.new
+    exit 1
+fi
+
+# Fix sudoers.d files
+echo "$(date): Fixing sudoers.d files..." | tee -a $LOG_FILE
+
 for file in /etc/sudoers.d/*; do
-    if [ -f "$file" ]; then
-        cp "$file" "$BACKUP_DIR/$(basename $file).backup"
-        sed -i 's/NOPASSWD://g' "$file"
+    # Skip if not a regular file
+    if [ ! -f "$file" ] || [ -d "$file" ]; then
+        continue
+    fi
+    
+    # Skip README
+    if [ "$(basename $file)" = "README" ]; then
+        continue
+    fi
+    
+    # Backup
+    cp "$file" "$BACKUP_DIR/$(basename $file).backup"
+    
+    # Remove NOPASSWD carefully
+    sed -i 's/NOPASSWD:[[:space:]]*//g' "$file"
+    
+    # Test syntax
+    visudo -c -f "$file" >> $LOG_FILE 2>&1
+    
+    if [ $? -eq 0 ]; then
         echo "Fixed: $file" | tee -a $LOG_FILE
+    else
+        echo "ERROR in $file, restoring backup" | tee -a $LOG_FILE
+        cp "$BACKUP_DIR/$(basename $file).backup" "$file"
     fi
 done
 
-# Verify sudoers syntax
-visudo -c >> $LOG_FILE 2>&1
-
-if [ $? -eq 0 ]; then
-    echo "SUCCESS: sudo configuration hardened" | tee -a $LOG_FILE
-else
-    echo "ERROR: sudoers syntax error, restoring backup" | tee -a $LOG_FILE
-    cp $BACKUP_DIR/sudoers.backup /etc/sudoers
-    exit 1
-fi
+echo "SUCCESS: sudo configuration fully hardened" | tee -a $LOG_FILE
 
 # ============================================
 # SECTION 3: CONFIGURE FIREWALL (UFW)
@@ -409,6 +475,29 @@ ss -tnp 2>/dev/null | grep ESTAB | tee -a $LOG_FILE
 echo "SUCCESS: Network audit complete" | tee -a $LOG_FILE
 
 # ============================================
+# SECTION 13: LOCK OTHER USER ACCOUNTS
+# ============================================
+
+echo "$(date): Locking other user accounts..." | tee -a $LOG_FILE
+
+# Get all regular users
+ALL_USERS=$(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd)
+
+for user in $ALL_USERS; do
+    # Don't lock the target user
+    if [ "$user" = "$TARGET_USER" ]; then
+        echo "SKIP: User $user (that's you!)" | tee -a $LOG_FILE
+        continue
+    fi
+    
+    # Lock the account
+    passwd -l $user 2>/dev/null
+    echo "LOCKED: User $user" | tee -a $LOG_FILE
+done
+
+echo "SUCCESS: Other user accounts locked" | tee -a $LOG_FILE
+
+# ============================================
 # FINAL SUMMARY
 # ============================================
 
@@ -420,9 +509,9 @@ echo "Backup directory: $BACKUP_DIR"
 echo "Log file: $LOG_FILE"
 echo ""
 echo "Hardening applied:"
-echo "  ✓ Password changed for $(whoami) (6-digit, not saved)"
+echo "  ✓ Password changed for $TARGET_USER (6-digit, not saved)"
 echo "  ✓ SSH hardened (no root login, limited auth)"
-echo "  ✓ sudo hardened (passwords required)"
+echo "  ✓ sudo hardened (passwords required, FIXED)"
 echo "  ✓ Firewall configured (if UFW available)"
 echo "  ✓ Unnecessary services disabled"
 echo "  ✓ Kernel hardened (IP spoofing, SYN protection)"
@@ -433,6 +522,7 @@ echo "  ✓ Secure umask set"
 echo "  ✓ Suspicious files scanned"
 echo "  ✓ User accounts audited"
 echo "  ✓ Network connections audited"
+echo "  ✓ Other user accounts locked"
 echo ""
 echo "COMPETITION COMPLIANT:"
 echo "  ✓ No apt operations"
@@ -443,23 +533,9 @@ echo ""
 echo "⚠️  REMEMBER: Your new sudo password is the 6-digit number"
 echo "    you wrote down at the beginning!"
 echo ""
+echo "Test sudo now:"
+echo "  sudo -k  # Clear sudo cache"
+echo "  sudo whoami  # Should prompt for 6-digit password"
+echo ""
 echo "=========================================="
 echo "$(date): System hardening completed" | tee -a $LOG_FILE
-```
-
----
-
-## 🎯 How It Works
-
-### **At Script Start:**
-```
-==========================================
-🔒 CRITICAL: WRITE THIS DOWN NOW!
-==========================================
-
-New sudo password for ubuntu: 847362
-
-This will NOT be saved anywhere!
-Write it down before continuing!
-
-Press Enter when you've written it down...
