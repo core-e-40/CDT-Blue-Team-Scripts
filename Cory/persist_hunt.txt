@@ -1,0 +1,19 @@
+#!/bin/bash
+# quick_persistence_kill.sh
+
+# Nuke all cron jobs
+sudo crontab -r
+for user in $(cut -f1 -d: /etc/passwd); do
+    sudo crontab -r -u $user 2>/dev/null
+done
+
+# Kill suspicious users (check /etc/passwd first, then add to this list)
+# Example: sudo userdel -r attacker
+
+# Remove SSH keys
+sudo rm -f /root/.ssh/authorized_keys
+sudo rm -f /home/*/.ssh/authorized_keys
+
+# Change critical passwords
+echo "root:newpassword123" | sudo chpasswd
+echo "youruser:newpassword456" | sudo chpasswd
