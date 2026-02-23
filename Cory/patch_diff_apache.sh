@@ -1,0 +1,1 @@
+apt-get -o Dpkg::Options::="--force-confnew" install --reinstall apache2
