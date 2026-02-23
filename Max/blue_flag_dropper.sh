@@ -6,11 +6,17 @@
 
 # Explicit target directories
 TARGET_DIRS=(
-    "/etc"
+    "/etc/apache2"
+    "/etc/nginx"
+    "/etc/krb5kdc"
+    "/etc/inspircd"
+    "/usr/bin"
     "/var/www"
     "/var/www/html"
     "/var/www/wordpress"
     "/home"
+    "/etc/redis"
+    "/usr/local/bin"
 )
 
 FLAG_COUNT=25
@@ -19,7 +25,7 @@ LOG_FILE="/var/log/blue_flag_dropper.log"
 MESSAGES=(
     "Blue_got_you_again"
     "Defense_in_depth_wins"
-    "SIEM_saw_that"
+    "The_SIEM_saw_that"
     "Logs_tell_all"
     "Patched_before_exploit"
     "Blue_team_dominates"
