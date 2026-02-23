@@ -25,6 +25,13 @@ Disables TCP Forwarding, Port forwarding + Tunnels
 chmod +x ./Linux-Disable-User.sh
 sudo ./Linux-Disable-User.sh cyberrange
 ```
+- blue_flag_dropper.sh
+```
+Drops flags into known service directories to throw off red team
+
+chmod +x ./blue_flag_dropper.sh
+sudo bash ./blue_flag_dropper.sh
+```
 
 ## Stephen
 - WordPress-Harden.sh - No reboot required (Restarts Apache)
