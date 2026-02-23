@@ -70,7 +70,7 @@ append_flag() {
     esac
 }
 
-echo "==== Blue Flag Dropper Run $(date) ====" >> "$LOG_FILE"
+echo "==== Blue Flag Dropper Run $(date) ====" | tee -a "$LOG_FILE"
 
 for ((i=1; i<=FLAG_COUNT; i++)); do
     TARGET_FILE=$(get_random_file)
@@ -78,7 +78,7 @@ for ((i=1; i<=FLAG_COUNT; i++)); do
     if [[ -n "$TARGET_FILE" ]]; then
         FLAG=$(generate_flag)
         append_flag "$TARGET_FILE" "$FLAG"
-        echo "Dropped $FLAG in $TARGET_FILE" >> "$LOG_FILE"
+        echo "Dropped $FLAG in $TARGET_FILE" | tee -a "$LOG_FILE"
     fi
 done
 
