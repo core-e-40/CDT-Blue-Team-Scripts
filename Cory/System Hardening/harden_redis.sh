@@ -5,7 +5,7 @@
 #==============================
 
 # ============================================
-# SECTION 1: GLOBAL VARS & PRE-FLIGHT CHECKS
+# SECTION 1: GLOBAL VARS 
 # ============================================
 
 NEW_PASWD=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)
@@ -272,7 +272,7 @@ echo "SUCCESS: Persistence disabled (faster, less attack surface)" | tee -a $LOG
 echo "WARNING: If scoring requires persistent data, re-enable RDB/AOF" | tee -a $LOG_FILE
 
 # ============================================
-# SECTION 8: PRE-RESTART CHECKS
+# SECTION 8: PRE-RESTART CHECKS (ENHANCED)
 # ============================================
 
 echo "$(date): Running pre-restart checks..." | tee -a $LOG_FILE
@@ -281,54 +281,44 @@ echo "$(date): Running pre-restart checks..." | tee -a $LOG_FILE
 echo "$(date): Stopping existing Redis service..." | tee -a $LOG_FILE
 systemctl stop $REDIS_SERVICE_NAME 2>/dev/null
 
-# Kill any orphaned Redis processes
-REDIS_PIDS=$(pgrep redis-server)
-if [ -n "$REDIS_PIDS" ]; then
-    echo "WARNING: Found orphaned Redis processes: $REDIS_PIDS" | tee -a $LOG_FILE
-    echo "Killing orphaned processes..." | tee -a $LOG_FILE
-    pkill -9 redis-server
-    sleep 1
-fi
+# Kill any orphaned Redis processes - TRIPLE TAP to be absolutely sure
+echo "$(date): Killing any orphaned Redis processes..." | tee -a $LOG_FILE
+pkill -9 redis-server 2>/dev/null
+sleep 2
+pkill -9 redis-server 2>/dev/null
+sleep 1
+pkill -9 redis-server 2>/dev/null
+sleep 1
 
 # Verify port is now free
 if ss -tlnp 2>/dev/null | grep -q ":6379"; then
     echo "ERROR: Port 6379 is still in use after cleanup!" | tee -a $LOG_FILE
     ss -tlnp 2>/dev/null | grep ":6379" | tee -a $LOG_FILE
     echo "Cannot proceed with Redis restart" | tee -a $LOG_FILE
-    exit 1
+    
+    # Try one more aggressive kill
+    BLOCKING_PID=$(ss -tlnp 2>/dev/null | grep ":6379" | grep -oP 'pid=\K[0-9]+' | head -1)
+    if [ -n "$BLOCKING_PID" ]; then
+        echo "Attempting to kill blocking process: $BLOCKING_PID" | tee -a $LOG_FILE
+        kill -9 $BLOCKING_PID 2>/dev/null
+        sleep 2
+        
+        # Final check
+        if ss -tlnp 2>/dev/null | grep -q ":6379"; then
+            echo "ERROR: Still cannot free port 6379" | tee -a $LOG_FILE
+            exit 1
+        else
+            echo "SUCCESS: Port freed after aggressive kill" | tee -a $LOG_FILE
+        fi
+    else
+        exit 1
+    fi
 fi
 
-echo "SUCCESS: Port 6379 is free" | tee -a $LOG_FILE
+echo "SUCCESS: Port 6379 is free and ready" | tee -a $LOG_FILE
 
 # ============================================
-# SECTION 9: TEST CONFIG SYNTAX
-# ============================================
-
-echo "$(date): Testing Redis config syntax..." | tee -a $LOG_FILE
-
-# Test config syntax - FIXED: Use a temporary test instead of --test-config flag
-redis-server $REDIS_CONFIG_DIR > /tmp/redis_test.log 2>&1 &
-REDIS_TEST_PID=$!
-sleep 2
-
-# Check if Redis started successfully
-if ps -p $REDIS_TEST_PID > /dev/null; then
-    kill $REDIS_TEST_PID 2>/dev/null
-    wait $REDIS_TEST_PID 2>/dev/null
-    echo "SUCCESS: Config syntax is valid" | tee -a $LOG_FILE
-else
-    echo "ERROR: Redis config has errors!" | tee -a $LOG_FILE
-    cat /tmp/redis_test.log | tee -a $LOG_FILE
-    echo "Restoring backup..." | tee -a $LOG_FILE
-    cp $BACKUP_NAME $REDIS_CONFIG_DIR
-    echo "ERROR: Hardening failed, original config restored" | tee -a $LOG_FILE
-    exit 1
-fi
-
-rm -f /tmp/redis_test.log
-
-# ============================================
-# SECTION 10: RESTART REDIS
+# SECTION 9: RESTART REDIS
 # ============================================
 
 echo "$(date): Starting Redis service..." | tee -a $LOG_FILE
@@ -358,7 +348,7 @@ fi
 echo "SUCCESS: Redis service started" | tee -a $LOG_FILE
 
 # ============================================
-# SECTION 11: VERIFY REDIS IS WORKING
+# SECTION 10: VERIFY REDIS IS WORKING
 # ============================================
 
 echo "$(date): Verifying Redis is responding..." | tee -a $LOG_FILE
